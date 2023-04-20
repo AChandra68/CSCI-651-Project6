@@ -1,4 +1,4 @@
 # CSCI-651-Project6
 Final project for the course  CSCI-651-FoundationsOfComputerNetworks (Spring 2023)
 
-Further details can be found in [this](https://docs.google.com/document/d/1qHXG_IayEXAD_RTxnOJ51zEiNM2NnFyNr1s7c5ZNRYg/edit?usp=sharing) Google document.
+Further details can be found in [this](https://drive.google.com/drive/folders/1XYPKPuYym2mWvAl_ioeTcntkWOzzrO7S?usp=share_link) Google document.
