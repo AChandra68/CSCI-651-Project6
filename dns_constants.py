@@ -1,0 +1,2 @@
+DNS_PORT    = 53
+BUF_LEN     = 1024
