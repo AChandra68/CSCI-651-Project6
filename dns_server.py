@@ -12,3 +12,9 @@ __filename__    = "dns_server.py"
 
 # Add the code below this line
 
+def main():
+    print("DNS Server")
+    # TODO: Implement the DNS server
+
+if __name__ == '__main__':
+    main()
