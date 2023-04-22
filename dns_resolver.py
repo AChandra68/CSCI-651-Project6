@@ -18,6 +18,7 @@ import struct
 ID_LEN      = 16
 DNS_PORT    = 53
 BUF_LEN     = 1024
+HEADER_LEN  = 12
 # A class for resource records (RRs)
 
 
@@ -28,25 +29,41 @@ BUF_LEN     = 1024
 # cache list after TTL. TTL is received from the DNS server response and
 # alarm is set to the received TTL value.
 
-# 
-'''
-     
-               
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-| ID |
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-|QR| Opcode |AA|TC|RD|RA| Z | RCODE |
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-|                  QDCOUNT                      |
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-|                  ANCOUNT                      |
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-|                  NSCOUNT                      |
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-| ARCOUNT |
-+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+def get_name( response, position: int ):
+    """
+    Fetches the name field of each Answer in RR from the received
+    payload.
 
-'''
+    :param rcvd_payload: the payload received payload from a DNS server
+    :param position: the start position of name bytes
+    """
+
+    qname = ''
+
+    while True:
+        length = response[position]
+        if length == 0:
+            # end = 1
+            position += 1
+            break
+        
+        # offset in the name
+        if length == 192:
+            qname += '.' if qname else ''
+            qname_temp, position_temp = \
+                get_name ( response, response[position + 1] )
+            qname += qname_temp
+
+            # skip the \x0c and pointer address as well
+            position += 2
+            break
+
+        qname += '.' if qname else ''
+        qname += response[position+1:position+1+length].decode()
+        position += ( 1 + length )
+
+    return qname, position
+
 def query_construct(domain: str, qtype='A', server='8.8.8.8'):
     """
     Creates query for a domain name
@@ -75,7 +92,7 @@ def query_construct(domain: str, qtype='A', server='8.8.8.8'):
     qname += b'\x00'  # terminate domain name with null byte
 
     # to-do other record types
-    qtype = {'A': 1, 'AAAA': 28}.get(qtype, 1)  # default to A record
+    qtype = {'A': 1, 'AAAA': 28, 'CNAME': 5}.get(qtype, 1)  # default to A record
 
     qclass = 1  # internet (IN) class
     query = (transaction_id).to_bytes(2, byteorder='big') + \
@@ -88,9 +105,55 @@ def query_construct(domain: str, qtype='A', server='8.8.8.8'):
             (qtype).to_bytes(2, byteorder='big') + \
             (qclass).to_bytes(2, byteorder='big')
     
-    print(f"Query: {query}enddddd")
+    print(f"Query: {query}")
 
     return query
+
+def get_rrs( response, i, answers ):
+    """
+    Parses the resource records section of the response and creates the
+    resource records.
+
+    :param response: response received from the DNS query
+    :param position: start position of the response
+    :param answers: count of the resource records in the response
+    """
+    answers_rr = []
+    
+    for _ in range(answers):
+        rrname, i = get_name( response, i )
+        # rrtype, rrclass, ttl, rdlength = \
+        #     [int.from_bytes(response[i:i+2], byteorder='big') for i in range(i, i+8, 2)]
+        rrtype = int.from_bytes(response[i:i+2], byteorder='big')
+        i += 2
+
+        rrclass = int.from_bytes(response[i:i+2], byteorder='big')
+        i += 2
+
+        ttl = int.from_bytes(response[i:i+4], byteorder='big')
+        i += 4
+
+        rdlength = int.from_bytes(response[i:i+2], byteorder='big')
+        i += 2
+
+        print(f"rrtype: {rrtype}\trrclas:{rrclass}\tttl:{ttl}\trdlength:{rdlength}")
+
+        rdata = response[i : i + rdlength]
+
+        if rrtype == 1:  # A record
+            answer = socket.inet_ntoa(rdata)
+        elif rrtype == 28:  # AAAA record
+            answer = socket.inet_ntop(socket.AF_INET6, rdata)
+        elif rrtype == 5:
+            answer = get_name( response, i )
+        else:
+            answer = rdata.hex()
+        answers_rr.append((rrname, rrtype, rrclass, ttl, answer))
+        i += rdlength
+
+        # print(answers_rr)
+    
+    return answers_rr
 
 
 def resolve(domain, qtype='A', server='8.8.8.8'):
@@ -127,52 +190,24 @@ def resolve(domain, qtype='A', server='8.8.8.8'):
     z  = (flags & 0b0000000001000000) >> 6
     rcode = (flags & 0b0000000000111111)
     
-    qname = ''
+    # qname = 
 
     # 12 bytes headers are parsed, so skip them
-    i = 12
-
-    print("KKKKKllllllll")
+    i = HEADER_LEN
 
     # Extract the domain name from response
-    while True:
-        length = response[i]
-        if length == 0:
-            break
-        qname += '.' if qname else ''
-        qname += response[i+1:i+1+length].decode()
-        i += ( 1 + length )
+    qname, i = get_name( response, i )
 
-    print(f"qname: {qname}")
-
+    # qtype: 1 for A type and 5 for CNAME type
     qtype, qclass = [int.from_bytes(response[i:i+2], byteorder='big') for i in range(i, i+4, 2)]
 
-    answers_rr = []
     i += 4  # skip question section (qtype and qclass)
     
-    print(f"Answers: {answers}")
+    print(f"i={i}\t{response[i]}\t{response[i+1]}\t{response[i+2]}")
+
+    answers_rr = get_rrs( response, i, answers )
     
-    for _ in range(answers):
-        rrname = ''
-        while True:
-            length = response[i]
-            if length == 0:
-                break
-            rrname += '.' if rrname else 'jlj'
-            print(response)
-            rrname += response[i+1:i+1+length].decode()
-            i += 1 + length
-        rrtype, rrclass, ttl, rdlength = \
-            [int.from_bytes(response[i:i+2], byteorder='big') for i in range(i, i+8, 2)]
-        rdata = response[i+8:i+8+rdlength]
-        if rrtype == 1:  # A record
-            answer = socket.inet_ntoa(rdata)
-        elif rrtype == 28:  # AAAA record
-            answer = socket.inet_ntop(socket.AF_INET6, rdata)
-        else:
-            answer = rdata.hex()
-        answers_rr.append((rrname, rrtype, rrclass, ttl, answer))
-        i += 8 + rdlength
+    print(answers_rr)
 
     if rcode != 0:
         print(f"Error: DNS server returned error code {rcode}")
@@ -185,4 +220,4 @@ def resolve(domain, qtype='A', server='8.8.8.8'):
 
 if __name__ == '__main__':
 
-    ip_addresses = resolve( "techiehustle.com" )
+    ip_addresses = resolve( "image.google.com" )
