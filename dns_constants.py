@@ -1,2 +1,8 @@
 DNS_PORT    = 53
 BUF_LEN     = 1024
+HEADER_LEN  = 12
+ENCODING    = 'utf-8'
+
+CACHED_ENTRIES  = {}
+INITIAL_TTL     = 1800
+NUM_A_RR        = 1
