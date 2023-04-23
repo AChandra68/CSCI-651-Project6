@@ -207,8 +207,6 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
     """
     """
 
-    print("Khushi's World!")
-
     query = query_construct(domain, qtype, server)
 
     # send DNS query over UDP to specified server and receive response
