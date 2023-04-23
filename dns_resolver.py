@@ -13,12 +13,21 @@ __filename__    = "dns_resolver.py"
 import socket
 import random
 import struct
+import root_servers as root
 
 # Constants
 ID_LEN      = 16
 DNS_PORT    = 53
 BUF_LEN     = 1024
 HEADER_LEN  = 12
+
+# Type value constants
+A           = 1
+CNAME       = 5
+NS          = 2
+AAAA        = 28
+SOA         = 6
+
 # A class for resource records (RRs)
 
 
@@ -27,7 +36,7 @@ HEADER_LEN  = 12
 
 # SIGALARM to ensure that the RRs are invalidated and removed from the
 # cache list after TTL. TTL is received from the DNS server response and
-# alarm is set to the received TTL value.
+# alarm is set to the received TTL value.        
 
 def get_name( response, position: int ):
     """
@@ -79,7 +88,8 @@ def query_construct(domain: str, qtype='A', server='8.8.8.8'):
 
     print('DNS query header:', q_header.hex())
 
-    flags = 0b0000000100000000  # standard query, no recursion
+    flags = 0b0000000100000000
+    #0b0000000100000000  # standard query, no recursion
     questions = 1
     answers = 0
     authority = 0
@@ -92,7 +102,8 @@ def query_construct(domain: str, qtype='A', server='8.8.8.8'):
     qname += b'\x00'  # terminate domain name with null byte
 
     # to-do other record types
-    qtype = {'A': 1, 'AAAA': 28, 'CNAME': 5}.get(qtype, 1)  # default to A record
+    qtype = {'A': A, 'AAAA': AAAA, 'CNAME': CNAME, 'NS': NS,\
+             'SOA': SOA}.get(qtype, 1)  # default to A record
 
     qclass = 1  # internet (IN) class
     query = (transaction_id).to_bytes(2, byteorder='big') + \
@@ -109,6 +120,39 @@ def query_construct(domain: str, qtype='A', server='8.8.8.8'):
 
     return query
 
+
+def recursive_lkup( domain: str = ""):
+    """
+    Performs a recursive look up for the domain names which couldn't
+    be found in the resolver cache.
+
+    :param name: domain name to be searched
+    """
+
+    # start with the last label, and find the authorative server
+
+    labels = domain.split('.')[::-1]
+
+    name = ""
+
+    server = root.root_server_add[0]
+
+    for label in labels:
+        name = label + ('.' if name else '') + name
+        print(f"Domain: {name}\nServer: {server}")
+        # construct a DNS query with the label found so far and NS
+        rrs = resolve( name, "NS",  server)
+        print(type(rrs))
+        print(rrs)
+        authority_rrs = rrs["Authority"]
+        server = authority_rrs[0][-1]
+
+    print(f"SERVER: {server}\tName: {name}")
+
+    resolve( name, 'A', server)
+    return server
+
+
 def get_rrs( response, i, answers ):
     """
     Parses the resource records section of the response and creates the
@@ -122,8 +166,7 @@ def get_rrs( response, i, answers ):
     
     for _ in range(answers):
         rrname, i = get_name( response, i )
-        # rrtype, rrclass, ttl, rdlength = \
-        #     [int.from_bytes(response[i:i+2], byteorder='big') for i in range(i, i+8, 2)]
+       
         rrtype = int.from_bytes(response[i:i+2], byteorder='big')
         i += 2
 
@@ -140,25 +183,31 @@ def get_rrs( response, i, answers ):
 
         rdata = response[i : i + rdlength]
 
-        if rrtype == 1:  # A record
-            answer = socket.inet_ntoa(rdata)
-        elif rrtype == 28:  # AAAA record
+        if rrtype == A:  # A record
+            answer = ( socket.inet_ntoa(rdata), 0)
+        elif rrtype == AAAA:  # AAAA record
             answer = socket.inet_ntop(socket.AF_INET6, rdata)
-        elif rrtype == 5:
+        elif rrtype == CNAME:
+            answer = get_name( response, i )
+        elif rrtype == NS:
+            answer = get_name( response, i )
+        elif rrtype == SOA:
             answer = get_name( response, i )
         else:
             answer = rdata.hex()
-        answers_rr.append((rrname, rrtype, rrclass, ttl, answer))
+        answers_rr.append((rrname, rrtype, rrclass, ttl, answer[0]))
         i += rdlength
 
         # print(answers_rr)
     
-    return answers_rr
+    return answers_rr, i
 
 
-def resolve(domain, qtype='A', server='8.8.8.8'):
+def resolve(domain, qtype='A', server='1.1.1.1'):
     """
     """
+
+    print("Khushi's World!")
 
     query = query_construct(domain, qtype, server)
 
@@ -190,8 +239,6 @@ def resolve(domain, qtype='A', server='8.8.8.8'):
     z  = (flags & 0b0000000001000000) >> 6
     rcode = (flags & 0b0000000000111111)
     
-    # qname = 
-
     # 12 bytes headers are parsed, so skip them
     i = HEADER_LEN
 
@@ -201,23 +248,29 @@ def resolve(domain, qtype='A', server='8.8.8.8'):
     # qtype: 1 for A type and 5 for CNAME type
     qtype, qclass = [int.from_bytes(response[i:i+2], byteorder='big') for i in range(i, i+4, 2)]
 
-    i += 4  # skip question section (qtype and qclass)
-    
-    print(f"i={i}\t{response[i]}\t{response[i+1]}\t{response[i+2]}")
+    i += 4  # skip question section (qtype and qclass) - 4 octets
 
-    answers_rr = get_rrs( response, i, answers )
+    answers_rr, i = get_rrs( response, i, answers )
+
+    print(f"Answers: {answers_rr}" )
+
+    authority_rr, i = get_rrs( response, i, authority )
     
-    print(answers_rr)
+    print( f"Authority Servers: {authority_rr}" )
+
 
     if rcode != 0:
         print(f"Error: DNS server returned error code {rcode}")
         return []
-    elif answers == 0:
-        print(f"Error: no {qtype} records found for {domain}")
-        return []
+    
     else:
-        return [answer for _, _, _, _, answer in answers_rr]
+        rrs = {"Answer": answers_rr, "Authority": authority_rr}
+        return rrs
 
 if __name__ == '__main__':
 
-    ip_addresses = resolve( "image.google.com" )
+    # ip_addresses = resolve( "image.google.com" )
+    # recursive_lkup("image.google.com")
+    recursive_lkup("sis.rit.edu")
+
+    
