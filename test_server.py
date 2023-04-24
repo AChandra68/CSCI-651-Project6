@@ -87,10 +87,10 @@ def construct_response(request, query_type, query_class, answer: str):
     header = request[:const.HEADER_LEN]
     #1.a change the header to indicate that the response is a response
     # in the 2nd byte of the header, the first bit is 1 for response
-    header[2] = header[2] | 0b10000000
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + header[3:5] + (const.NUM_A_RR).to_bytes(1, byteorder='big') + header[7:]
 
     #1.b number of answer records in the response
-    header[6] = const.NUM_A_RR  # 1 answer record
+    # header[6] = const.NUM_A_RR  # 1 answer record
     #2. extract the question
     question = request[const.HEADER_LEN:]
     #2.b convert the IP address in answer to the format required by the DNS response
@@ -112,7 +112,7 @@ def construct_response(request, query_type, query_class, answer: str):
                     answer_length + \
                     answer_bytes
     #3. construct the response
-    response = header + question + answer_format
+    response = new_header + question + answer_format
     #4. send the response back to the client
     return response
 
@@ -164,6 +164,6 @@ def main():
         request = packet[42:]
         domain_name_to_query, query_type, query_class = parse_dns_query(request)
         print(domain_name_to_query, query_type)
-        print(construct_response(request, query_type, query_class, "8.8.8.8"))
+        print(construct_response(request, query_type, query_class, "142.251.40.131"))
 if __name__ == '__main__':
     main()
