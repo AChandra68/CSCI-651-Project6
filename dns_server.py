@@ -30,31 +30,32 @@ def parse_dns_query(request):
     question_count = int.from_bytes(header[4:6], byteorder='big')
 
     #2. extract the question
-    question = request[const.HEADER_LEN:]
-    # first byte indicates the length of the domain name
-    domain_name_len = question[0]
+    queries = request[const.HEADER_LEN:]
+    
     # domain name is followed by 2 bytes of type and 2 bytes of class
     # extract domain name and decode it
-    domain_name_to_query = ""
+    qname = ''
     count = 0
     # keep appending till we hit null byte
-    while question[domain_name_len+1] != 0:
-        domain_name_to_query += question[1+count:domain_name_len+1].decode(const.ENCODING)
-        domain_name_to_query += "."
-        count += domain_name_len
-        domain_name_len = question[domain_name_len+1]
-        
-    # remove the last dot
-    domain_name_to_query = domain_name_to_query[:-1]
+    offset = const.HEADER_LEN
+    while True:
+        label_length = request[offset]
+        if label_length == 0:
+            # End of QNAME
+            # Increment offset by 1 to move past the null byte
+            offset += 1
+            break
+        qname += request[offset + 1:offset + 1 + label_length].decode(const.ENCODING) + '.'
+        offset += 1 + label_length
 
-    #3. extract the type of query
-    query_type = question[domain_name_len+1:domain_name_len+3]
+    # Remove the trailing dot
+    qname = qname[:-1]
+    
+    query_type = int.from_bytes(request[offset:offset+2], byteorder='big')
 
-    #4. extract the class of query
-    query_class = question[domain_name_len+3:domain_name_len+5]
-
-    print("Domain name to query: ", domain_name_to_query)
-    return domain_name_to_query, query_type, query_class
+    offset += 2
+    query_class = int.from_bytes(request[offset:offset+2], byteorder='big')
+    return qname, const.QUERY_TYPES.get(query_type), query_class
 
 
 def construct_error_response(request):

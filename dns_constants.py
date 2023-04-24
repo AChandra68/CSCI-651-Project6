@@ -6,3 +6,4 @@ ENCODING    = 'utf-8'
 CACHED_ENTRIES  = {}
 INITIAL_TTL     = 1800
 NUM_A_RR        = 1
+QUERY_TYPES     = {1: 'A', 5: 'CNAME', 2: 'NS', 6: 'SOA', 65: 'HTTPS'}
