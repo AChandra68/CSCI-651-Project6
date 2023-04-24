@@ -163,7 +163,8 @@ def recursive_search( domain: str ):
 
         # construct a DNS query with the label found so far and NS
         rrs = resolve( name, "NS",  server)
-        
+        if not rrs:
+            return None
         authority_rrs = rrs["Authority"]
         server = authority_rrs[0][-1]
 
@@ -369,12 +370,17 @@ def run_dns_search( domain_name: str, qtype = "A" ):
 
     if not len(rrs):
         authority_server = recursive_search( domain_name )
+        if not authority_server:
+            print( "No authority server found, please recheck the domain name" )
+            return
         rrs = resolve( domain_name, 'A', authority_server )
     
-    print_fn( rrs )
+    # print_fn( rrs )
+    return rrs
 
 if __name__ == '__main__':
-
+    pass
+    # run_dns_search("khushim13")
     # ip_addresses = resolve( "image.google.com" )
-    run_dns_search("image.google.com")
-    run_dns_search("sis.rit.edu")
+    # run_dns_search("image.google.com")
+    # run_dns_search("sis.rit.edu")
