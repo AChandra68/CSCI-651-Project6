@@ -34,8 +34,17 @@ SOA         = 6
 
 type_lkup = {1: "A", 5: "CNAME", 2: "NS", 6: "SOA", 28: "AAAA"}
 
+import enum
+class RRTYPE(enum.Enum):
+    A = 1
+    CNAME = 5
+    NS = 2
+    SOA = 6
+    HTTPS = 65
+    AAAA = 28
 
 def signal_handler( domain_name, signum, frame ):
+        print("signal triggered")
         if domain_name in r_records.cached_records:
             del r_records.cached_records[domain_name]
 
@@ -59,7 +68,6 @@ def get_name( response: bytes, position: int ):
     :param rcvd_payload: the payload received payload from a DNS server
     :param position: the start position of name bytes
     """
-
     qname = ''
 
     while True:
@@ -218,7 +226,8 @@ def get_rrs( response, i, answers ):
             answer = rdata.hex()
         
         answers_rr.append( [rrname, rrtype, rrclass, ttl, answer[0]] )
-
+        # if type(rrtype) == int:
+        #     rrtype = type_lkup[rrtype]
         # Add to the cached list, if not already present
         if rrname not in r_records.cached_records:
             r_records.cached_records[rrname] = {"rrtype": rrtype, 
@@ -228,7 +237,9 @@ def get_rrs( response, i, answers ):
                                                 }
             
             # Start the alarm
+            print(f"Starting alarm for {rrname} for {ttl} seconds")
             signal.signal(signal.SIGINT, partial(signal_handler, rrname))
+            # signal.alarm(ttl)
 
         # Move the pointer ahead by rdlength
         i += rdlength
@@ -250,10 +261,10 @@ def search_cached_rrs( domain_name: str, qtype: str ):
     if (domain_name in r_records.cached_records):
         
         # Find in the list of the domain name found
-        for a_record in r_records.cached_records[domain_name]:
-
-            if a_record["rrtype"] == qtype:
-                rrs.append( a_record )
+        a_record = r_records.cached_records[domain_name]
+        if a_record["rrtype"] == qtype:
+            rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
+            rrs["Authority"] = []
     
     return rrs
 
@@ -278,17 +289,14 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
         sock.sendto(query, (server, DNS_PORT))
         response, _ = sock.recvfrom( BUF_LEN )
     except socket.timeout:
-        print( "Request Timedout" )
-
+        # print( "Request Timedout" )
+        return None
     finally:
         sock.close()
-
-    # print(f"Rcvd response: {response}")
 
     # parse DNS response message
     transaction_id, flags, questions, answers, authority, additional = \
         [int.from_bytes(response[i:i+2], byteorder='big') for i in range(0, 12, 2)]
-    
     # Extract the flag bits
     qr = (flags & 0b1000000000000000) >> 15
     opcode = (flags & 0b0111100000000000) >> 11
@@ -360,27 +368,34 @@ def print_fn( rrs ):
         print(f"TTL:\t{a_record[3]}")
         print(f"Server:\t{a_record[4]}\n")
 
-def run_dns_search( domain_name: str, qtype = "A" ):
+def run_dns_search( domain_name: str, qtype = "A", dns_server = "127.0.0.1"):
     """
     Driver function for the DNS search
     :param domain_name: the domain name to be searched
     """
 
-    rrs = search_cached_rrs( domain_name, qtype )
+    rrs = search_cached_rrs( domain_name, RRTYPE[qtype].value )
 
     if not len(rrs):
-        authority_server = recursive_search( domain_name )
-        if not authority_server:
-            print( "No authority server found, please recheck the domain name" )
-            return
-        rrs = resolve( domain_name, 'A', authority_server )
-    
-    # print_fn( rrs )
+        # search the local server
+        rrs = resolve( domain_name, qtype, dns_server )
+        # if error response search recursively
+        if not rrs:
+            authority_server = recursive_search( domain_name )
+            if not authority_server:
+                print( "No authority server found, please recheck the domain name" )
+                return
+            rrs = resolve( domain_name, qtype, authority_server )
+
     return rrs
 
 if __name__ == '__main__':
     pass
     # run_dns_search("khushim13")
+    # run_dns_search("chat.google.com", "CNAME")
+    # while True:
+    #     pass
+    # run_dns_search("chat.google.com")
     # ip_addresses = resolve( "image.google.com" )
     # run_dns_search("image.google.com")
     # run_dns_search("sis.rit.edu")

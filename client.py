@@ -19,9 +19,10 @@ def help():
     Print the help menu
     """
     print("The following commands are available:")
-    print("help - Print the help menu")
-    print("query - Query the DNS server")
-    print("exit - Exit the program")
+    print("1. help - Print the help menu")
+    print("2. query - Query the DNS server")
+    print("The query type is of 2 types: A and CNAME")
+    print("3. exit - Exit the program")
 
 def main():
     """
@@ -41,14 +42,16 @@ def main():
                 help()
             elif opt == "query\n":
                 print("Enter the query type: ")
-                print("A")
-                print("CNAME")
+                
                 query_type = sys.stdin.readline().strip()
                 print("Enter the domain name: ")
                 domain_name = sys.stdin.readline().strip()
                 rrs = resolver.run_dns_search(domain_name, query_type)
                 if rrs:
                     resolver.print_fn(rrs)
+            else:
+                print("Invalid option. Please try again")
+                continue
                 
         except Exception as e:
             print("Error reading input. Please try again\n", e)

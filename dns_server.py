@@ -13,7 +13,7 @@ __filename__    = "dns_server.py"
 # Add the code below this line
 import socket
 import dns_constants as const
-
+import dns_resolver as resolver
 
 def populate_cache():
     """
@@ -57,40 +57,38 @@ def parse_dns_query(request):
     query_class = int.from_bytes(request[offset:offset+2], byteorder='big')
     return qname, query_type, query_class
 
+def construct_header_question(request, error=False):
+    #1. extract the header
+    header = request[:const.HEADER_LEN]
+    # print("header", header)
+    #1.a change the header to indicate that the response is a response
+    # in the 2nd byte of the header, the first bit is 1 for response
+    
+    if not error:
+        rcode = header[3]
+    else:
+        rcode = header[3] | 0b00000011
+    
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + bytes(rcode) + header[4:7] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
+    
+    #2. extract the question
+    question = request[const.HEADER_LEN:]
+    return new_header + question
+
 
 def construct_error_response(request):
     """
     Construct the error response to be sent to the client.
     """
-    #1. extract the header
-    header = request[:const.HEADER_LEN]
-    #1.a change the header to indicate that the response is a response
-    # in the 2nd byte of the header, the first bit is 1 for response
-    header[2] = header[2] | 0b10000000
-
-    #1.b number of answer records in the response
-    header[6] = 0  # 0 answer records
-    #2. extract the question
-    question = request[const.HEADER_LEN:]
-    #3. construct the response
-    response = header + question
-    #4. send the response back to the client
-    return response
+    new_header_question = construct_header_question(request, True)
+    return new_header_question
 
 def construct_response(request, query_type, query_class, answer: str):
     """
     Construct the response to be sent to the client.
     """
-    #1. extract the header
-    header = request[:const.HEADER_LEN]
-    #1.a change the header to indicate that the response is a response
-    # in the 2nd byte of the header, the first bit is 1 for response
-    new_header = header[:2] + bytes([header[2] | 0b10000000]) + header[3:6] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
-
-    #1.b number of answer records in the response
-    # header[6] = const.NUM_A_RR  # 1 answer record
-    #2. extract the question
-    question = request[const.HEADER_LEN:]
+    #1, construct the header and question
+    new_header_question = construct_header_question(request)
     #2.b convert the IP address in answer to the format required by the DNS response
     answer_bytes = bytes(map(int, answer.split('.')))
     #2.c construct the answer
@@ -110,7 +108,7 @@ def construct_response(request, query_type, query_class, answer: str):
                     answer_length + \
                     answer_bytes
     #3. construct the response
-    response = new_header + question + answer_format
+    response = new_header_question + answer_format
     #4. send the response back to the client
     return response
 
@@ -138,8 +136,10 @@ def parse_resolver_request(dns_server_socket):
         # 2.5. Send the response back to the client if the domain name is present in the master zone file else send an error message
         if answer:
             # 2.6. construct the response
+            print(request)
             print(domain_name_to_query, query_type, query_class, answer)
             response = construct_response(request, query_type, query_class, answer)
+            print(response)
             # 2.7. send the response back to the client
             dns_server_socket.sendto(response, client_address)
         else:
