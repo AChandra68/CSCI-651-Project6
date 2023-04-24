@@ -87,7 +87,7 @@ def construct_response(request, query_type, query_class, answer: str):
     header = request[:const.HEADER_LEN]
     #1.a change the header to indicate that the response is a response
     # in the 2nd byte of the header, the first bit is 1 for response
-    new_header = header[:2] + bytes([header[2] | 0b10000000]) + header[3:5] + (const.NUM_A_RR).to_bytes(1, byteorder='big') + header[7:]
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + header[3:6] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
 
     #1.b number of answer records in the response
     # header[6] = const.NUM_A_RR  # 1 answer record
@@ -163,7 +163,13 @@ def main():
     for (packet, m,) in RawPcapReader(req_pkt_f):
         request = packet[42:]
         domain_name_to_query, query_type, query_class = parse_dns_query(request)
+        print("---begin----")
+        print(request)
         print(domain_name_to_query, query_type)
-        print(construct_response(request, query_type, query_class, "142.251.40.131"))
+        print(construct_response(request, query_type, query_class, "142.251.41.14"))
+        print("---end----")
+        if domain_name_to_query == "chat.google.com":
+            break
+        # break
 if __name__ == '__main__':
     main()

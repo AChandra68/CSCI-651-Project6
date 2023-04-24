@@ -19,7 +19,7 @@ def populate_cache():
     """
     Cache is a list of tuples. Each tuple has the type, name,  value, and TTL associated
     """
-    const.CACHED_ENTRIES["www.google.com"] = ["A", "142.251.40.238", 100]
+    const.CACHED_ENTRIES["chat.google.com"] = ["A", "142.251.40.238", 100]
 
 def parse_dns_query(request):
     """
@@ -55,7 +55,7 @@ def parse_dns_query(request):
 
     offset += 2
     query_class = int.from_bytes(request[offset:offset+2], byteorder='big')
-    return qname, const.QUERY_TYPES.get(query_type), query_class
+    return qname, query_type, query_class
 
 
 def construct_error_response(request):
@@ -77,7 +77,7 @@ def construct_error_response(request):
     #4. send the response back to the client
     return response
 
-def construct_response(request, answer: str):
+def construct_response(request, query_type, query_class, answer: str):
     """
     Construct the response to be sent to the client.
     """
@@ -85,10 +85,10 @@ def construct_response(request, answer: str):
     header = request[:const.HEADER_LEN]
     #1.a change the header to indicate that the response is a response
     # in the 2nd byte of the header, the first bit is 1 for response
-    header[2] = header[2] | 0b10000000
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + header[3:6] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
 
     #1.b number of answer records in the response
-    header[6] = const.NUM_A_RR  # 1 answer record
+    # header[6] = const.NUM_A_RR  # 1 answer record
     #2. extract the question
     question = request[const.HEADER_LEN:]
     #2.b convert the IP address in answer to the format required by the DNS response
@@ -100,9 +100,17 @@ def construct_response(request, answer: str):
     # TTL
     # length of the answer
     # answer
-    answer_format = b'\xc0\x0c' + b'\x00\x01' + b'\x00\x01' + b'\x00\x00\x07\x08' + b'\x00\x04' + answer_bytes
+    answer_length = const.IP_LENGTH.to_bytes(2, byteorder='big')
+    if query_type == 1:
+        answer_length = const.IP_LENGTH.to_bytes(2, byteorder='big')
+    answer_format = const.NAME_POINTER + \
+                    (query_type).to_bytes(2, byteorder='big') + \
+                    (query_class).to_bytes(2, byteorder='big') + \
+                    (const.INITIAL_TTL).to_bytes(4, byteorder='big') + \
+                    answer_length + \
+                    answer_bytes
     #3. construct the response
-    response = header + question + answer_format
+    response = new_header + question + answer_format
     #4. send the response back to the client
     return response
 
@@ -110,7 +118,7 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     """
     Check if the domain name is present in the master zone file.
     """
-    const.CACHED_ENTRIES
+    return const.CACHED_ENTRIES[domain_name_to_query][1]
 
 def parse_resolver_request(dns_server_socket):
     while True:
@@ -130,7 +138,8 @@ def parse_resolver_request(dns_server_socket):
         # 2.5. Send the response back to the client if the domain name is present in the master zone file else send an error message
         if answer:
             # 2.6. construct the response
-            response = construct_response(request, answer)
+            print(domain_name_to_query, query_type, query_class, answer)
+            response = construct_response(request, query_type, query_class, answer)
             # 2.7. send the response back to the client
             dns_server_socket.sendto(response, client_address)
         else:
