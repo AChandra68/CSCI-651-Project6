@@ -13,7 +13,7 @@ __filename__    = "dns_server.py"
 # Add the code below this line
 import socket
 import dns_constants as const
-import dns_resolver as resolver
+import server_resolver as resolver
 
 def populate_cache():
     """
@@ -28,6 +28,13 @@ def parse_dns_query(request):
     #1. extract the header
     header = request[:const.HEADER_LEN]
     question_count = int.from_bytes(header[4:6], byteorder='big')
+    flags = header[2:4]
+
+    # Check if the RD flag is set
+    if flags[0] & 0x00000001:
+        recursion_desired = True
+    else:
+        recursion_desired = False
 
     #2. extract the question
     queries = request[const.HEADER_LEN:]
@@ -55,7 +62,7 @@ def parse_dns_query(request):
 
     offset += 2
     query_class = int.from_bytes(request[offset:offset+2], byteorder='big')
-    return qname, query_type, query_class
+    return qname, query_type, query_class, recursion_desired
 
 def construct_header_question(request, error=False):
     #1. extract the header
@@ -116,7 +123,11 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     """
     Check if the domain name is present in the master zone file.
     """
-    return const.CACHED_ENTRIES[domain_name_to_query][1]
+    if domain_name_to_query in const.CACHED_ENTRIES:
+        return const.CACHED_ENTRIES[domain_name_to_query][1]
+    else:
+        return None
+
 
 def parse_resolver_request(dns_server_socket):
     while True:
@@ -124,7 +135,7 @@ def parse_resolver_request(dns_server_socket):
         # 2.1. Read the request from the socket
         request, client_address = dns_server_socket.recvfrom(const.BUF_LEN)
         # 2.2. Extract the domain name and the type of query
-        domain_name_to_query, query_type, query_class = parse_dns_query(request)
+        domain_name_to_query, query_type, query_class, recursion_desired = parse_dns_query(request)
 
 
         # 2.3. Check if the domain name is present in the cache
@@ -134,7 +145,7 @@ def parse_resolver_request(dns_server_socket):
         # 2.4. If not, check if the domain name is present in the master zone file
         answer = check_domain_name_entry(domain_name_to_query, query_type, query_class)
         # 2.5. Send the response back to the client if the domain name is present in the master zone file else send an error message
-        if answer:
+        if answer and not recursion_desired:
             # 2.6. construct the response
             print(request)
             print(domain_name_to_query, query_type, query_class, answer)
@@ -142,15 +153,23 @@ def parse_resolver_request(dns_server_socket):
             print(response)
             # 2.7. send the response back to the client
             dns_server_socket.sendto(response, client_address)
+        elif not answer and recursion_desired:
+            # pass to the resolver
+            rrs = resolver.run_dns_search(domain_name_to_query, const.QUERY_TYPES[query_type])
+            if rrs and rrs.get('Answer') and rrs['Answer'][0][1] == query_type:
+                # 2.6. construct the response
+                response = construct_response(request, query_type, query_class, rrs['Answer'][0][4])
+                dns_server_socket.sendto(response, client_address)
+            else:
+                construct_error_response(request)
         else:
             # 2.8. send an error message
             construct_error_response(request)
 
 
 def main():
-    print("DNS Server")
+    print("DNS Server Running...")
     populate_cache()
-    # TODO: Implement the DNS server
     # 1. Create a socket that is always listening for incoming connections and bind it to port 53
     dns_server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dns_server_socket.bind(('', const.DNS_PORT))
