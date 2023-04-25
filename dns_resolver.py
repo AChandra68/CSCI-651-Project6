@@ -69,7 +69,6 @@ def get_name( response: bytes, position: int ):
     :param position: the start position of name bytes
     """
     qname = ''
-
     while True:
         length = response[position]
         if length == 0:
@@ -94,7 +93,7 @@ def get_name( response: bytes, position: int ):
 
     return qname, position
 
-def query_construct(domain: str, qtype='A', server='8.8.8.8'):
+def query_construct(domain: str, qtype='A', rd=True):
     """
     Creates query for a domain name
 
@@ -114,9 +113,11 @@ def query_construct(domain: str, qtype='A', server='8.8.8.8'):
     # q_header = struct.pack('!HHHHHH', id, id,id,id,id,id)
 
     # print('DNS query header:', q_header.hex())
-
-    flags       = 0b0000000100000000  # standard query, with recursion
-
+    if rd:
+        flags       = 0b0000000100000000  # standard query, with recursion
+    else:
+        flags       = 0b0000000000000000
+        # query with no recursion
     questions   = 1     # Number of queries
     answers     = 0     # Number of answers
     authority   = 0     # Authority bits clear as a query
@@ -192,7 +193,6 @@ def get_rrs( response, i, answers ):
     :param answers: count of the resource records in the response
     """
     answers_rr = []
-    
     for _ in range(answers):
         rrname, i = get_name( response, i )
        
@@ -269,7 +269,7 @@ def search_cached_rrs( domain_name: str, qtype: str ):
     return rrs
 
 
-def resolve(domain, qtype='A', server='1.1.1.1'):
+def resolve(domain, qtype='A', server='1.1.1.1', rd = True):
     """
     It gets the mapping from domain names to the IP address or CNAME
     resource.
@@ -279,7 +279,7 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
     :param server: DNS server location.
     """
 
-    query = query_construct(domain, qtype, server)
+    query = query_construct(domain, qtype, rd)
 
     # send DNS query over UDP to specified server and receive response
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -309,6 +309,7 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
 
     if rcode != 0:
         print(f"Error: DNS server returned error code {rcode}")
+        print("Trying other servers...")
         return []
     # 12 bytes headers are parsed, so skip them
     i = HEADER_LEN
@@ -354,18 +355,18 @@ def print_fn( rrs ):
         print(f"Class:\t{a_record[2]}")
         print(f"TTL:\t{a_record[3]}")
         print(f"Server:\t{a_record[4]}\n")
+    if rrs["Authority"]:
+        print("\n\nHEADER: AUTHORITY SECTION")
+        ns = rrs["Authority"]
 
-    print("\n\nHEADER: AUTHORITY SECTION")
-    ns = rrs["Authority"]
+        for a_record in ns:
+            print(f"Name:\t{a_record[0]}")
+            print(f"Type:\t{type_lkup[a_record[1]]}")
+            print(f"Class:\t{a_record[2]}")
+            print(f"TTL:\t{a_record[3]}")
+            print(f"Server:\t{a_record[4]}\n")
 
-    for a_record in ns:
-        print(f"Name:\t{a_record[0]}")
-        print(f"Type:\t{type_lkup[a_record[1]]}")
-        print(f"Class:\t{a_record[2]}")
-        print(f"TTL:\t{a_record[3]}")
-        print(f"Server:\t{a_record[4]}\n")
-
-def run_dns_search( domain_name: str, qtype = "A", dns_server = "127.0.0.1"):
+def run_dns_search( domain_name: str, rd=True, qtype = "A", dns_server = "127.0.0.1"):
     """
     Driver function for the DNS search
     :param domain_name: the domain name to be searched
@@ -375,26 +376,26 @@ def run_dns_search( domain_name: str, qtype = "A", dns_server = "127.0.0.1"):
 
     if not len(rrs):
         # search the local server
-        rrs = resolve( domain_name, qtype, dns_server )
+        rrs = resolve( domain_name, qtype, dns_server, rd )
         # if error response search recursively
         if not rrs:
             authority_server = recursive_search( domain_name )
             if not authority_server:
                 print( "No authority server found, please recheck the domain name" )
                 return
-            print(rrs)
-            rrs = resolve( domain_name, qtype, authority_server )
+
+            rrs = resolve( domain_name, qtype, authority_server, rd )
 
     return rrs
 
 if __name__ == '__main__':
-    pass
+    # pass
     # run_dns_search("khushim13")
-    # run_dns_search("chat.google.com" )
+    # run_dns_search("chat.google.com", False, "A")
     # run_dns_search("chat.google.com", "CNAME")
     # while True:
     #     pass
     # run_dns_search("chat.google.com")
     # ip_addresses = resolve( "image.google.com" )
-    # run_dns_search("image.google.com")
+    print_fn(run_dns_search("image.google.com", True, "A"))
     # run_dns_search("sis.rit.edu")

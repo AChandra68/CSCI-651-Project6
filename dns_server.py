@@ -70,13 +70,13 @@ def construct_header_question(request, error=False):
     # print("header", header)
     #1.a change the header to indicate that the response is a response
     # in the 2nd byte of the header, the first bit is 1 for response
-    
+    num_answers = const.NUM_A_RR
     if not error:
         rcode = header[3]
     else:
         rcode = header[3] | 0b00000011
-    
-    new_header = header[:2] + bytes([header[2] | 0b10000000]) + rcode.to_bytes(1, byteorder='big') + header[4:7] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
+        num_answers = 0
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + rcode.to_bytes(1, byteorder='big') + header[4:6] + (num_answers).to_bytes(2, byteorder='big') + header[8:]
     
     #2. extract the question
     question = request[const.HEADER_LEN:]
@@ -168,9 +168,10 @@ def parse_resolver_request(dns_server_socket):
             # pass to the resolver
             
             rrs = resolver.run_dns_search(domain_name_to_query, const.QUERY_TYPES[query_type])
-            if query_type == const.RRTYPE.A.value and rrs and rrs.get('Answer') and rrs['Answer'][0][1] == query_type:
+            if query_type == const.RRTYPE.A.value and rrs and rrs.get('Answer') and rrs['Answer'][-1][1] == query_type:
                 # 2.6. construct the response
-                response = construct_response(request, query_type, query_class, rrs['Answer'][0][4])
+                response = construct_response(request, query_type, query_class, rrs['Answer'][-1][4])
+
                 dns_server_socket.sendto(response, client_address)
 
             else:
@@ -178,6 +179,7 @@ def parse_resolver_request(dns_server_socket):
                 dns_server_socket.sendto(response, client_address)
         else:
             # 2.8. send an error message
+            print('No recursion desired')
             response = construct_error_response(request)
             dns_server_socket.sendto(response, client_address)
 

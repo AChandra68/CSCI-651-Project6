@@ -392,9 +392,9 @@ def run_dns_search( domain_name: str, qtype = "A"):
     return rrs
 
 if __name__ == '__main__':
-    # pass
+    pass
     # run_dns_search("khushim13")
-    run_dns_search("chat.google.com")
+    # run_dns_search("chat.google.com")
     # run_dns_search("chat.google.com", "CNAME")
     # while True:
     #     pass
