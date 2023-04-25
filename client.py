@@ -50,6 +50,7 @@ def main():
             opt = sys.stdin.readline()
             if opt == "exit\n":
                 print("Exiting...")
+                resolver.STOP_THREAD = True
                 break
             elif opt == "help\n":
                 help()

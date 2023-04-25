@@ -12,6 +12,7 @@ __filename__    = "dns_server.py"
 
 # Add the code below this line
 import socket
+import sys
 import dns_constants as const
 import server_resolver as resolver
 
@@ -19,7 +20,7 @@ def populate_cache():
     """
     Cache is a list of tuples. Each tuple has the type, name,  value, and TTL associated
     """
-    const.CACHED_ENTRIES["chat.google.com"] = [1, "142.251.40.238", 100]
+    const.CACHED_ENTRIES["chat.google.com"] = [1, "142.251.40.238", 25]
 
 def parse_dns_query(request):
     """
@@ -90,7 +91,7 @@ def construct_error_response(request):
     new_header_question = construct_header_question(request, True)
     return new_header_question
 
-def construct_response(request, query_type, query_class, answer: str):
+def construct_response(request, query_type, query_class, answer: str, ttl=const.INITIAL_TTL):
     """
     Construct the response to be sent to the client.
     """
@@ -111,7 +112,7 @@ def construct_response(request, query_type, query_class, answer: str):
     answer_format = const.NAME_POINTER + \
                     (query_type).to_bytes(2, byteorder='big') + \
                     (query_class).to_bytes(2, byteorder='big') + \
-                    (const.INITIAL_TTL).to_bytes(4, byteorder='big') + \
+                    (ttl).to_bytes(4, byteorder='big') + \
                     answer_length + \
                     answer_bytes
     #3. construct the response
@@ -124,7 +125,7 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     Check if the domain name is present in the master zone file.
     """
     if domain_name_to_query in const.CACHED_ENTRIES and const.CACHED_ENTRIES[domain_name_to_query][0] == query_type:
-        return const.CACHED_ENTRIES[domain_name_to_query][1]
+        return const.CACHED_ENTRIES[domain_name_to_query]
     else:
         return None
 
@@ -159,7 +160,7 @@ def parse_resolver_request(dns_server_socket):
             # 2.6. construct the response
 
             print(domain_name_to_query, query_type, query_class, answer)
-            response = construct_response(request, query_type, query_class, answer)
+            response = construct_response(request, query_type, query_class, answer[1], answer[2])
             
             # 2.7. send the response back to the client
             print("sending response", response)
@@ -192,7 +193,13 @@ def main():
     dns_server_socket.bind(('', const.DNS_PORT))
     # for maintainence queries use the SOCK_STREAM since it is a connection oriented protocol - TODO as multi threaded server
     # 2. When a connection is received, parse the request
-    parse_resolver_request(dns_server_socket)
-
+    try:
+        parse_resolver_request(dns_server_socket)
+    except KeyboardInterrupt:
+        print("DNS Server Shutting Down...")
+        resolver.STOP_THREAD = True
+    finally:
+        dns_server_socket.close()
+        sys.exit(0)
 if __name__ == '__main__':
     main()

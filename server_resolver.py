@@ -13,8 +13,8 @@ __filename__    = "dns_resolver.py"
 import socket
 import random
 import struct
-import signal
-from functools import partial
+import time
+import threading
 import root_servers as root
 import server_resource_records as r_records
 
@@ -24,7 +24,7 @@ DNS_PORT    = 53
 BUF_LEN     = 1024
 HEADER_LEN  = 12
 OFFSET_MARK = 192
-
+STOP_THREAD = False
 # Type value constants
 A           = 1
 CNAME       = 5
@@ -43,11 +43,15 @@ class RRTYPE(enum.Enum):
     HTTPS = 65
     AAAA = 28
 
-def signal_handler( domain_name, signum, frame ):
-        print("signal triggered")
-        if domain_name in r_records.cached_records:
-            del r_records.cached_records[domain_name]
-
+def delete_expired_entries_continuously():
+    while not STOP_THREAD:
+        for domain_name in r_records.cached_records.copy():
+            if STOP_THREAD:
+                break
+            if r_records.cached_records[domain_name]["timestamp"] <= time.time():
+                del r_records.cached_records[domain_name]
+delete_cache_entries = threading.Thread(target=delete_expired_entries_continuously)
+delete_cache_entries.start()
 
 # A class for resource records (RRs)
 
@@ -233,11 +237,11 @@ def get_rrs( response, i, answers ):
             r_records.cached_records[rrname] = {"rrtype": rrtype, 
                                                 "rrclass": rrclass, 
                                                 "ttl": ttl, 
-                                                "address": answer[0]
-                                                }
+                                                "address": answer[0],
+                          "timestamp": time.time() + ttl,                      }
             
             # Start the alarm
-            print(f"Starting alarm for {rrname} for {ttl} seconds")
+            # print(f"Starting alarm for {rrname} for {ttl} seconds")
             # signal.signal(signal.SIGINT, partial(signal_handler, rrname))
             # signal.alarm(ttl)
 
@@ -390,12 +394,3 @@ def run_dns_search( domain_name: str, qtype = "A"):
 
 if __name__ == '__main__':
     pass
-    # run_dns_search("khushim13")
-    # run_dns_search("chat.google.com")
-    # run_dns_search("chat.google.com", "CNAME")
-    # while True:
-    #     pass
-    # run_dns_search("chat.google.com")
-    # ip_addresses = resolve( "image.google.com" )
-    # run_dns_search("image.google.com")
-    # run_dns_search("sis.rit.edu")
