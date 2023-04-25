@@ -308,7 +308,9 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
     ra = (flags & 0b0000000010000000) >> 7
     z  = (flags & 0b0000000001000000) >> 6
     rcode = (flags & 0b0000000000111111)
-    
+    if rcode != 0:
+        print(f"Error: DNS server returned error code {rcode}")
+        return []
     # 12 bytes headers are parsed, so skip them
     i = HEADER_LEN
 
@@ -331,13 +333,9 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
     print( f"Authority Servers: {authority_rr}" )
 
 
-    if rcode != 0:
-        print(f"Error: DNS server returned error code {rcode}")
-        return []
-    
-    else:
-        rrs = {"Answer": answers_rr, "Authority": authority_rr}
-        return rrs
+
+    rrs = {"Answer": answers_rr, "Authority": authority_rr}
+    return rrs
 
 
 def print_fn( rrs ):
@@ -385,7 +383,6 @@ def run_dns_search( domain_name: str, qtype = "A"):
         if not rrs:
             authority_server = recursive_search( domain_name )
             if not authority_server:
-                print( "No authority server found, please recheck the domain name" )
                 return
             rrs = resolve( domain_name, qtype, authority_server )
 
