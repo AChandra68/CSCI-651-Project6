@@ -310,7 +310,7 @@ def resolve(domain, qtype='A', server='1.1.1.1', rd = True):
     rcode = (flags & 0b0000000000111111)
 
     if rcode != 0:
-        print(f"Error: DNS server returned error code {rcode}")
+        print(f"Error: DNS server {server} returned error code {rcode}")
         print("Trying other servers...")
         return []
     # 12 bytes headers are parsed, so skip them
@@ -409,4 +409,4 @@ if __name__ == '__main__':
     # run_dns_search("chat.google.com")
     # ip_addresses = resolve( "image.google.com" )
     # print_fn(run_dns_search("image.google.com", True, "A"))
-    print_fn(run_dns_search("www.sis.rit.edu"))
+    # print_fn(run_dns_search("www.sis.rit.edu"))
