@@ -19,7 +19,7 @@ def populate_cache():
     """
     Cache is a list of tuples. Each tuple has the type, name,  value, and TTL associated
     """
-    const.CACHED_ENTRIES["chat.google.com"] = ["A", "142.251.40.238", 100]
+    const.CACHED_ENTRIES["chat.google.com"] = [1, "142.251.40.238", 100]
 
 def parse_dns_query(request):
     """
@@ -42,7 +42,7 @@ def parse_dns_query(request):
     # domain name is followed by 2 bytes of type and 2 bytes of class
     # extract domain name and decode it
     qname = ''
-    count = 0
+
     # keep appending till we hit null byte
     offset = const.HEADER_LEN
     while True:
@@ -76,7 +76,7 @@ def construct_header_question(request, error=False):
     else:
         rcode = header[3] | 0b00000011
     
-    new_header = header[:2] + bytes([header[2] | 0b10000000]) + bytes(rcode) + header[4:7] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + rcode.to_bytes(1, byteorder='big') + header[4:7] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
     
     #2. extract the question
     question = request[const.HEADER_LEN:]
@@ -123,11 +123,21 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     """
     Check if the domain name is present in the master zone file.
     """
-    if domain_name_to_query in const.CACHED_ENTRIES:
+    if domain_name_to_query in const.CACHED_ENTRIES and const.CACHED_ENTRIES[domain_name_to_query][0] == query_type:
         return const.CACHED_ENTRIES[domain_name_to_query][1]
     else:
         return None
 
+
+def construct_response_cname(request, query_type, query_class, authority):
+    """
+    Construct the response to be sent to the client.
+    :param request:
+    :param query_type:
+    :param query_class:
+    :param authority: list of list of form [name, ttl, cname]
+    """
+    pass
 
 def parse_resolver_request(dns_server_socket):
     while True:
@@ -145,26 +155,31 @@ def parse_resolver_request(dns_server_socket):
         # 2.4. If not, check if the domain name is present in the master zone file
         answer = check_domain_name_entry(domain_name_to_query, query_type, query_class)
         # 2.5. Send the response back to the client if the domain name is present in the master zone file else send an error message
-        if answer and not recursion_desired:
+        if answer:
             # 2.6. construct the response
-            print(request)
+
             print(domain_name_to_query, query_type, query_class, answer)
             response = construct_response(request, query_type, query_class, answer)
-            print(response)
+            
             # 2.7. send the response back to the client
+            print("sending response", response)
             dns_server_socket.sendto(response, client_address)
         elif not answer and recursion_desired:
             # pass to the resolver
+            
             rrs = resolver.run_dns_search(domain_name_to_query, const.QUERY_TYPES[query_type])
-            if rrs and rrs.get('Answer') and rrs['Answer'][0][1] == query_type:
+            if query_type == const.RRTYPE.A.value and rrs and rrs.get('Answer') and rrs['Answer'][0][1] == query_type:
                 # 2.6. construct the response
                 response = construct_response(request, query_type, query_class, rrs['Answer'][0][4])
                 dns_server_socket.sendto(response, client_address)
+
             else:
-                construct_error_response(request)
+                response = construct_error_response(request)
+                dns_server_socket.sendto(response, client_address)
         else:
             # 2.8. send an error message
-            construct_error_response(request)
+            response = construct_error_response(request)
+            dns_server_socket.sendto(response, client_address)
 
 
 def main():

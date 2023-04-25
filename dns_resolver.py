@@ -44,7 +44,7 @@ class RRTYPE(enum.Enum):
     AAAA = 28
 
 def signal_handler( domain_name, signum, frame ):
-        print("signal triggered")
+        # print("signal triggered")
         if domain_name in r_records.cached_records:
             del r_records.cached_records[domain_name]
 
@@ -166,8 +166,8 @@ def recursive_search( domain: str ):
 
     for label in labels:
         name = label + ('.' if name else '') + name
-        print("\n\n\n\n")
-        print(f"Domain: {name}\nServer: {server}")
+        # print("\n\n\n\n")
+        # print(f"Domain: {name}\nServer: {server}")
 
         # construct a DNS query with the label found so far and NS
         rrs = resolve( name, "NS",  server)
@@ -176,7 +176,7 @@ def recursive_search( domain: str ):
         authority_rrs = rrs["Authority"]
         server = authority_rrs[0][-1]
 
-    print(f"SERVER: {server}\tName: {name}")
+    # print(f"SERVER: {server}\tName: {name}")
 
     # resolve( name, 'A', server)
     return server
@@ -262,7 +262,7 @@ def search_cached_rrs( domain_name: str, qtype: str ):
         
         # Find in the list of the domain name found
         a_record = r_records.cached_records[domain_name]
-        if a_record["rrtype"] == qtype:
+        if a_record["rrtype"] == qtype and qtype == RRTYPE["A"].value:
             rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
             rrs["Authority"] = []
     
@@ -306,7 +306,10 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
     ra = (flags & 0b0000000010000000) >> 7
     z  = (flags & 0b0000000001000000) >> 6
     rcode = (flags & 0b0000000000111111)
-    
+
+    if rcode != 0:
+        print(f"Error: DNS server returned error code {rcode}")
+        return []
     # 12 bytes headers are parsed, so skip them
     i = HEADER_LEN
 
@@ -322,20 +325,14 @@ def resolve(domain, qtype='A', server='1.1.1.1'):
     # Extract the answer section - A & CNAME type resource records
     answers_rr, i = get_rrs( response, i, answers )
 
-    print(f"Answers: {answers_rr}" )
+    # print(f"Answers: {answers_rr}" )
 
     authority_rr, i = get_rrs( response, i, authority )
     
-    print( f"Authority Servers: {authority_rr}" )
+    # print( f"Authority Servers: {authority_rr}" )
 
-
-    if rcode != 0:
-        print(f"Error: DNS server returned error code {rcode}")
-        return []
-    
-    else:
-        rrs = {"Answer": answers_rr, "Authority": authority_rr}
-        return rrs
+    rrs = {"Answer": answers_rr, "Authority": authority_rr}
+    return rrs
 
 
 def print_fn( rrs ):
@@ -385,6 +382,7 @@ def run_dns_search( domain_name: str, qtype = "A", dns_server = "127.0.0.1"):
             if not authority_server:
                 print( "No authority server found, please recheck the domain name" )
                 return
+            print(rrs)
             rrs = resolve( domain_name, qtype, authority_server )
 
     return rrs

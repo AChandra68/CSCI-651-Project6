@@ -32,7 +32,7 @@ def main():
     #2. Send the query to the resolver
     #3. Print the response
     while True:
-        print(f"\033[92mpktsniffer> \033[0m", end = "", flush = True)
+        print(f"\033[92mdns> \033[0m", end = "", flush = True)
         try:
             opt = sys.stdin.readline()
             if opt == "exit\n":
