@@ -389,7 +389,7 @@ def run_dns_search( domain_name: str, rd=True, qtype = "A", dns_server = "127.0.
     return rrs
 
 if __name__ == '__main__':
-    # pass
+    pass
     # run_dns_search("khushim13")
     # run_dns_search("chat.google.com", False, "A")
     # run_dns_search("chat.google.com", "CNAME")
@@ -397,5 +397,5 @@ if __name__ == '__main__':
     #     pass
     # run_dns_search("chat.google.com")
     # ip_addresses = resolve( "image.google.com" )
-    print_fn(run_dns_search("image.google.com", True, "A"))
+    # print_fn(run_dns_search("image.google.com", True, "A"))
     # run_dns_search("sis.rit.edu")
