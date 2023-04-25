@@ -31,6 +31,7 @@ CNAME       = 5
 NS          = 2
 AAAA        = 28
 SOA         = 6
+INTERNET    = 1
 
 type_lkup = {1: "A", 5: "CNAME", 2: "NS", 6: "SOA", 28: "AAAA"}
 
@@ -164,23 +165,24 @@ def recursive_search( domain: str ):
     name = ""
 
     server = root.root_server_add[0]
-
+    prev_server = None
     for label in labels:
         name = label + ('.' if name else '') + name
         # print("\n\n\n\n")
         # print(f"Domain: {name}\nServer: {server}")
-
+        prev_server = server
         # construct a DNS query with the label found so far and NS
         rrs = resolve( name, "NS",  server)
         if not rrs:
-            return None
+            return name, prev_server, False
         authority_rrs = rrs["Authority"]
         server = authority_rrs[0][-1]
 
     # print(f"SERVER: {server}\tName: {name}")
 
     # resolve( name, 'A', server)
-    return server
+    
+    return name, server, True
 
 
 def get_rrs( response, i, answers ):
@@ -342,19 +344,19 @@ def print_fn( rrs ):
 
     :param rrs: resource records found in the query
     """
-
+    if rrs["Answer"]:
     # Header of the output
-    print("\n\nHEADER: ANSWER SECTION")
+        print("\n\nHEADER: ANSWER SECTION")
 
-    # loop through the records and print them
-    answers = rrs["Answer"]
+        # loop through the records and print them
+        answers = rrs["Answer"]
 
-    for a_record in answers:
-        print(f"Name:\t{a_record[0]}")
-        print(f"Type:\t{type_lkup[a_record[1]]}")
-        print(f"Class:\t{a_record[2]}")
-        print(f"TTL:\t{a_record[3]}")
-        print(f"Server:\t{a_record[4]}\n")
+        for a_record in answers:
+            print(f"Name:\t{a_record[0]}")
+            print(f"Type:\t{type_lkup[a_record[1]]}")
+            print(f"Class:\t{a_record[2]}")
+            print(f"TTL:\t{a_record[3]}")
+            print(f"Server:\t{a_record[4]}\n")
     if rrs["Authority"]:
         print("\n\nHEADER: AUTHORITY SECTION")
         ns = rrs["Authority"]
@@ -379,10 +381,19 @@ def run_dns_search( domain_name: str, rd=True, qtype = "A", dns_server = "127.0.
         rrs = resolve( domain_name, qtype, dns_server, rd )
         # if error response search recursively
         if not rrs:
-            authority_server = recursive_search( domain_name )
-            if not authority_server:
-                print( "No authority server found, please recheck the domain name" )
-                return
+            label, authority_server, found = recursive_search( domain_name )
+            if not found:
+                # print( "No authority server found, please recheck the domain name" )
+                # remove the leftmost label
+                new_label = ""
+                if label.split("."):
+                    new_label = ".".join(label.split(".")[1:])
+                else:
+                    new_label = "."
+                record = [new_label, SOA, INTERNET, 404, authority_server]
+                rrs = {"Answer": [], "Authority": []}
+                rrs["Authority"].append(record)
+                return rrs
 
             rrs = resolve( domain_name, qtype, authority_server, rd )
 
@@ -390,7 +401,7 @@ def run_dns_search( domain_name: str, rd=True, qtype = "A", dns_server = "127.0.
 
 if __name__ == '__main__':
     pass
-    # run_dns_search("khushim13")
+    # run_dns_search("khushim13.com.xyz.gad")
     # run_dns_search("chat.google.com", False, "A")
     # run_dns_search("chat.google.com", "CNAME")
     # while True:
@@ -398,4 +409,4 @@ if __name__ == '__main__':
     # run_dns_search("chat.google.com")
     # ip_addresses = resolve( "image.google.com" )
     # print_fn(run_dns_search("image.google.com", True, "A"))
-    # run_dns_search("sis.rit.edu")
+    print_fn(run_dns_search("www.sis.rit.edu"))
