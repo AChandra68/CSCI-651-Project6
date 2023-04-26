@@ -20,7 +20,8 @@ def populate_cache():
     """
     Cache is a list of tuples. Each tuple has the type, name,  value, and TTL associated
     """
-    const.CACHED_ENTRIES["chat.google.com"] = [1, "142.251.40.238", 25]
+    const.CACHED_ENTRIES[("chat.google.com", 1)] = [1, "142.251.40.238", 25]
+    const.CACHED_ENTRIES[("shop.amazon.com", 5)] = [5, "s1.amazon.com", 45]
 
 def parse_dns_query(request):
     """
@@ -136,8 +137,8 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     """
     Check if the domain name is present in the master zone file.
     """
-    if domain_name_to_query in const.CACHED_ENTRIES and const.CACHED_ENTRIES[domain_name_to_query][0] == query_type:
-        return const.CACHED_ENTRIES[domain_name_to_query]
+    if (domain_name_to_query, query_type) in const.CACHED_ENTRIES:
+        return const.CACHED_ENTRIES[(domain_name_to_query, query_type)]
     else:
         return None
 
