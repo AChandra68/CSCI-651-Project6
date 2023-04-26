@@ -46,11 +46,11 @@ class RRTYPE(enum.Enum):
 
 def delete_expired_entries_continuously():
     while not STOP_THREAD:
-        for domain_name in r_records.cached_records.copy():
+        for (domain_name, qtype) in r_records.cached_records.copy():
             if STOP_THREAD:
                 break
-            if r_records.cached_records[domain_name]["timestamp"] <= time.time():
-                del r_records.cached_records[domain_name]
+            if r_records.cached_records[(domain_name, qtype)]["timestamp"] <= time.time():
+                del r_records.cached_records[(domain_name, qtype)]
 delete_cache_entries = threading.Thread(target=delete_expired_entries_continuously)
 delete_cache_entries.start()
 # A class for resource records (RRs)
@@ -234,8 +234,8 @@ def get_rrs( response, i, answers ):
         # if type(rrtype) == int:
         #     rrtype = type_lkup[rrtype]
         # Add to the cached list, if not already present
-        if rrname not in r_records.cached_records:
-            r_records.cached_records[rrname] = {"rrtype": rrtype, 
+        if (rrname, rrtype) not in r_records.cached_records:
+            r_records.cached_records[(rrname, rrtype)] = {"rrtype": rrtype, 
                                                 "rrclass": rrclass, 
                                                 "ttl": ttl, 
                                                 "address": answer[0],
@@ -264,13 +264,12 @@ def search_cached_rrs( domain_name: str, qtype: str ):
     """
     rrs = {}
     print(f"Searching for {domain_name} {qtype} in cache")
-    if (domain_name in r_records.cached_records):
+    if ((domain_name, qtype) in r_records.cached_records):
         
         # Find in the list of the domain name found
-        a_record = r_records.cached_records[domain_name]
-        if a_record["rrtype"] == qtype:
-            rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
-            rrs["Authority"] = []
+        a_record = r_records.cached_records[(domain_name, qtype)]
+        rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
+        rrs["Authority"] = []
     
     return rrs
 
@@ -407,6 +406,10 @@ if __name__ == '__main__':
     pass
     # run_dns_search("khushim13.com.xyz.gad")
     # run_dns_search("chat.google.com", False, "A")
+    # run_dns_search("chat.google.com", False, "A")
+    # run_dns_search("image.google.com", False, "CNAME")
+    # run_dns_search("image.google.com", False, "CNAME")
+    # print("done")
     # print_fn(run_dns_search("google.com", True, "CNAME"))
     # print_fn(run_dns_search("image.google.com", True, "CNAME"))
     # while True:
