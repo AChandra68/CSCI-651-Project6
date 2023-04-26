@@ -263,12 +263,12 @@ def search_cached_rrs( domain_name: str, qtype: str ):
     :param qtype: Domain record type.
     """
     rrs = {}
-
+    print(f"Searching for {domain_name} {qtype} in cache")
     if (domain_name in r_records.cached_records):
         
         # Find in the list of the domain name found
         a_record = r_records.cached_records[domain_name]
-        if a_record["rrtype"] == qtype and qtype == RRTYPE["A"].value:
+        if a_record["rrtype"] == qtype:
             rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
             rrs["Authority"] = []
     
@@ -407,7 +407,8 @@ if __name__ == '__main__':
     pass
     # run_dns_search("khushim13.com.xyz.gad")
     # run_dns_search("chat.google.com", False, "A")
-    # run_dns_search("chat.google.com", "CNAME")
+    # print_fn(run_dns_search("google.com", True, "CNAME"))
+    # print_fn(run_dns_search("image.google.com", True, "CNAME"))
     # while True:
     #     pass
     # run_dns_search("chat.google.com")

@@ -267,7 +267,6 @@ def search_cached_rrs( domain_name: str, qtype: str ):
         # Find in the list of the domain name found
         a_record = r_records.cached_records[domain_name]
         if a_record["rrtype"] == qtype: 
-            if qtype == RRTYPE["A"].value:
                 rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
                 rrs["Authority"] = []
             

@@ -97,8 +97,7 @@ def construct_response(request, query_type, query_class, answer: str, ttl=const.
     """
     #1, construct the header and question
     new_header_question = construct_header_question(request)
-    #2.b convert the IP address in answer to the format required by the DNS response
-    answer_bytes = bytes(map(int, answer.split('.')))
+    
     #2.c construct the answer
     # pointer to the domain name in the question
     # type of query
@@ -106,15 +105,28 @@ def construct_response(request, query_type, query_class, answer: str, ttl=const.
     # TTL
     # length of the answer
     # answer
-    answer_length = const.IP_LENGTH.to_bytes(2, byteorder='big')
-    if query_type == 1:
+    answer_format = b''
+    if query_type == const.RRTYPE.A.value:
+        #2.b convert the IP address in answer to the format required by the DNS response
+        answer_bytes = bytes(map(int, answer.split('.')))
         answer_length = const.IP_LENGTH.to_bytes(2, byteorder='big')
-    answer_format = const.NAME_POINTER + \
+        answer_format = const.NAME_POINTER + \
                     (query_type).to_bytes(2, byteorder='big') + \
                     (query_class).to_bytes(2, byteorder='big') + \
                     (ttl).to_bytes(4, byteorder='big') + \
                     answer_length + \
                     answer_bytes
+    elif query_type == const.RRTYPE.CNAME.value:
+        answer_length = len(answer).to_bytes(2, byteorder='big')
+        cname_bytes = b''.join([len(label).to_bytes(1, byteorder='big') + label.encode(const.ENCODING) for label in answer.split('.')]) + b'\x00'
+        answer_format = const.NAME_POINTER + \
+                    (query_type).to_bytes(2, byteorder='big') + \
+                    (query_class).to_bytes(2, byteorder='big') + \
+                    (ttl).to_bytes(4, byteorder='big') + \
+                    answer_length + \
+                    cname_bytes
+
+
     #3. construct the response
     response = new_header_question + answer_format
     #4. send the response back to the client
@@ -129,16 +141,6 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     else:
         return None
 
-
-def construct_response_cname(request, query_type, query_class, authority):
-    """
-    Construct the response to be sent to the client.
-    :param request:
-    :param query_type:
-    :param query_class:
-    :param authority: list of list of form [name, ttl, cname]
-    """
-    pass
 
 def parse_resolver_request(dns_server_socket):
     while True:
@@ -169,10 +171,10 @@ def parse_resolver_request(dns_server_socket):
             # pass to the resolver
             
             rrs = resolver.run_dns_search(domain_name_to_query, const.QUERY_TYPES[query_type])
-            if query_type == const.RRTYPE.A.value and rrs and rrs.get('Answer') and rrs['Answer'][-1][1] == query_type:
+            if rrs and rrs.get('Answer') and rrs['Answer'][-1][1] == query_type:
+
                 # 2.6. construct the response
                 response = construct_response(request, query_type, query_class, rrs['Answer'][-1][4])
-
                 dns_server_socket.sendto(response, client_address)
 
             else:
