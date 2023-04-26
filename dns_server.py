@@ -67,6 +67,9 @@ def parse_dns_query(request):
     return qname, query_type, query_class, recursion_desired
 
 def construct_header_question(request, error=False):
+    """
+    Construct the header and question section of the response
+    """
     #1. extract the header
     header = request[:const.HEADER_LEN]
     # print("header", header)
@@ -119,7 +122,8 @@ def construct_response(request, query_type, query_class, answer: str, ttl=const.
                     answer_bytes
     elif query_type == const.RRTYPE.CNAME.value:
         answer_length = len(answer).to_bytes(2, byteorder='big')
-        cname_bytes = b''.join([len(label).to_bytes(1, byteorder='big') + label.encode(const.ENCODING) for label in answer.split('.')]) + b'\x00'
+        cname_bytes = b''.join([len(label).to_bytes(1, byteorder='big') + \
+            label.encode(const.ENCODING) for label in answer.split('.')]) + b'\x00'
         answer_format = const.NAME_POINTER + \
                     (query_type).to_bytes(2, byteorder='big') + \
                     (query_class).to_bytes(2, byteorder='big') + \
@@ -144,6 +148,9 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
 
 
 def parse_resolver_request(dns_server_socket):
+    """
+    Parse the request received from the client.
+    """
     while True:
         # 2. When a connection is received, parse the request
         # 2.1. Read the request from the socket
@@ -189,6 +196,9 @@ def parse_resolver_request(dns_server_socket):
 
 
 def main():
+    """
+    Main function to run the DNS server.
+    """
     print("DNS Server Running...")
     populate_cache()
     # 1. Create a socket that is always listening for incoming connections and bind it to port 53
@@ -204,5 +214,6 @@ def main():
     finally:
         dns_server_socket.close()
         sys.exit(0)
+
 if __name__ == '__main__':
     main()

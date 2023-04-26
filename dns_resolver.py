@@ -45,6 +45,9 @@ class RRTYPE(enum.Enum):
     AAAA = 28
 
 def delete_expired_entries_continuously():
+    """
+    Deletes expired entries from the cache continuously.
+    """
     while not STOP_THREAD:
         for (domain_name, qtype) in r_records.cached_records.copy():
             if STOP_THREAD:
