@@ -12,15 +12,15 @@ __filename__    = "dns_server.py"
 
 # Add the code below this line
 import socket
-import sys
 import dns_constants as const
-import server_resolver as resolver
+import struct
+from scapy.utils import RawPcapReader
 
 def populate_cache():
     """
     Cache is a list of tuples. Each tuple has the type, name,  value, and TTL associated
     """
-    const.CACHED_ENTRIES["chat.google.com"] = [1, "142.251.40.238", 25]
+    const.CACHED_ENTRIES["www.google.com"] = ["A", "142.251.40.238", 100]
 
 def parse_dns_query(request):
     """
@@ -29,13 +29,6 @@ def parse_dns_query(request):
     #1. extract the header
     header = request[:const.HEADER_LEN]
     question_count = int.from_bytes(header[4:6], byteorder='big')
-    flags = header[2:4]
-
-    # Check if the RD flag is set
-    if flags[0] & 0x00000001:
-        recursion_desired = True
-    else:
-        recursion_desired = False
 
     #2. extract the question
     queries = request[const.HEADER_LEN:]
@@ -43,7 +36,7 @@ def parse_dns_query(request):
     # domain name is followed by 2 bytes of type and 2 bytes of class
     # extract domain name and decode it
     qname = ''
-
+    count = 0
     # keep appending till we hit null byte
     offset = const.HEADER_LEN
     while True:
@@ -63,40 +56,43 @@ def parse_dns_query(request):
 
     offset += 2
     query_class = int.from_bytes(request[offset:offset+2], byteorder='big')
-    return qname, query_type, query_class, recursion_desired
+    return qname, query_type, query_class
 
-def construct_header_question(request, error=False):
-    #1. extract the header
-    header = request[:const.HEADER_LEN]
-    # print("header", header)
-    #1.a change the header to indicate that the response is a response
-    # in the 2nd byte of the header, the first bit is 1 for response
-    num_answers = const.NUM_A_RR
-    if not error:
-        rcode = header[3]
-    else:
-        rcode = header[3] | 0b00000011
-        num_answers = 0
-    new_header = header[:2] + bytes([header[2] | 0b10000000]) + rcode.to_bytes(1, byteorder='big') + header[4:6] + (num_answers).to_bytes(2, byteorder='big') + header[8:]
-    
-    #2. extract the question
-    question = request[const.HEADER_LEN:]
-    return new_header + question
 
 
 def construct_error_response(request):
     """
     Construct the error response to be sent to the client.
     """
-    new_header_question = construct_header_question(request, True)
-    return new_header_question
+    #1. extract the header
+    header = request[:const.HEADER_LEN]
+    #1.a change the header to indicate that the response is a response
+    # in the 2nd byte of the header, the first bit is 1 for response
+    header[2] = header[2] | 0b10000000
 
-def construct_response(request, query_type, query_class, answer: str, ttl=const.INITIAL_TTL):
+    #1.b number of answer records in the response
+    header[6] = 0  # 0 answer records
+    #2. extract the question
+    question = request[const.HEADER_LEN:]
+    #3. construct the response
+    response = header + question
+    #4. send the response back to the client
+    return response
+
+def construct_response(request, query_type, query_class, answer: str):
     """
     Construct the response to be sent to the client.
     """
-    #1, construct the header and question
-    new_header_question = construct_header_question(request)
+    #1. extract the header
+    header = request[:const.HEADER_LEN]
+    #1.a change the header to indicate that the response is a response
+    # in the 2nd byte of the header, the first bit is 1 for response
+    new_header = header[:2] + bytes([header[2] | 0b10000000]) + header[3:6] + (const.NUM_A_RR).to_bytes(2, byteorder='big') + header[8:]
+
+    #1.b number of answer records in the response
+    # header[6] = const.NUM_A_RR  # 1 answer record
+    #2. extract the question
+    question = request[const.HEADER_LEN:]
     #2.b convert the IP address in answer to the format required by the DNS response
     answer_bytes = bytes(map(int, answer.split('.')))
     #2.c construct the answer
@@ -112,11 +108,11 @@ def construct_response(request, query_type, query_class, answer: str, ttl=const.
     answer_format = const.NAME_POINTER + \
                     (query_type).to_bytes(2, byteorder='big') + \
                     (query_class).to_bytes(2, byteorder='big') + \
-                    (ttl).to_bytes(4, byteorder='big') + \
+                    (const.INITIAL_TTL).to_bytes(4, byteorder='big') + \
                     answer_length + \
                     answer_bytes
     #3. construct the response
-    response = new_header_question + answer_format
+    response = new_header + question + answer_format
     #4. send the response back to the client
     return response
 
@@ -124,21 +120,7 @@ def check_domain_name_entry(domain_name_to_query, query_type, query_class):
     """
     Check if the domain name is present in the master zone file.
     """
-    if domain_name_to_query in const.CACHED_ENTRIES and const.CACHED_ENTRIES[domain_name_to_query][0] == query_type:
-        return const.CACHED_ENTRIES[domain_name_to_query]
-    else:
-        return None
-
-
-def construct_response_cname(request, query_type, query_class, authority):
-    """
-    Construct the response to be sent to the client.
-    :param request:
-    :param query_type:
-    :param query_class:
-    :param authority: list of list of form [name, ttl, cname]
-    """
-    pass
+    print(const.CACHED_ENTRIES)
 
 def parse_resolver_request(dns_server_socket):
     while True:
@@ -146,7 +128,7 @@ def parse_resolver_request(dns_server_socket):
         # 2.1. Read the request from the socket
         request, client_address = dns_server_socket.recvfrom(const.BUF_LEN)
         # 2.2. Extract the domain name and the type of query
-        domain_name_to_query, query_type, query_class, recursion_desired = parse_dns_query(request)
+        domain_name_to_query, query_type, query_class = parse_dns_query(request)
 
 
         # 2.3. Check if the domain name is present in the cache
@@ -158,48 +140,36 @@ def parse_resolver_request(dns_server_socket):
         # 2.5. Send the response back to the client if the domain name is present in the master zone file else send an error message
         if answer:
             # 2.6. construct the response
-
-            print(domain_name_to_query, query_type, query_class, answer)
-            response = construct_response(request, query_type, query_class, answer[1], answer[2])
-            
+            response = construct_response(request, query_type, query_class, answer)
+            print(response)
             # 2.7. send the response back to the client
-            print("sending response", response)
-            dns_server_socket.sendto(response, client_address)
-        elif not answer and recursion_desired:
-            # pass to the resolver
-            
-            rrs = resolver.run_dns_search(domain_name_to_query, const.QUERY_TYPES[query_type])
-            if query_type == const.RRTYPE.A.value and rrs and rrs.get('Answer') and rrs['Answer'][-1][1] == query_type:
-                # 2.6. construct the response
-                response = construct_response(request, query_type, query_class, rrs['Answer'][-1][4])
-
-                dns_server_socket.sendto(response, client_address)
-
-            else:
-                response = construct_error_response(request)
-                dns_server_socket.sendto(response, client_address)
+            # dns_server_socket.sendto(response, client_address)
         else:
             # 2.8. send an error message
-            print('No recursion desired')
-            response = construct_error_response(request)
-            dns_server_socket.sendto(response, client_address)
+            construct_error_response(request)
 
 
 def main():
-    print("DNS Server Running...")
+    print("DNS Server")
     populate_cache()
+    # TODO: Implement the DNS server
     # 1. Create a socket that is always listening for incoming connections and bind it to port 53
-    dns_server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    dns_server_socket.bind(('', const.DNS_PORT))
+    # dns_server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # dns_server_socket.bind(('', const.DNS_PORT))
     # for maintainence queries use the SOCK_STREAM since it is a connection oriented protocol - TODO as multi threaded server
     # 2. When a connection is received, parse the request
-    try:
-        parse_resolver_request(dns_server_socket)
-    except KeyboardInterrupt:
-        print("DNS Server Shutting Down...")
-        resolver.STOP_THREAD = True
-    finally:
-        dns_server_socket.close()
-        sys.exit(0)
+    # parse_resolver_request(dns_server_socket)
+    req_pkt_f = "req.pcapng"
+    for (packet, m,) in RawPcapReader(req_pkt_f):
+        request = packet[42:]
+        domain_name_to_query, query_type, query_class = parse_dns_query(request)
+        print("---begin----")
+        print(request)
+        print(domain_name_to_query, query_type)
+        print(construct_response(request, query_type, query_class, "142.251.41.14"))
+        print("---end----")
+        if domain_name_to_query == "chat.google.com":
+            break
+        # break
 if __name__ == '__main__':
     main()

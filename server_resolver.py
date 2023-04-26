@@ -13,10 +13,10 @@ __filename__    = "dns_resolver.py"
 import socket
 import random
 import struct
-import root_servers as root
-import resource_records as r_records
 import time
 import threading
+import root_servers as root
+import server_resource_records as r_records
 
 # Constants
 ID_LEN      = 16
@@ -31,7 +31,6 @@ CNAME       = 5
 NS          = 2
 AAAA        = 28
 SOA         = 6
-INTERNET    = 1
 
 type_lkup = {1: "A", 5: "CNAME", 2: "NS", 6: "SOA", 28: "AAAA"}
 
@@ -53,6 +52,7 @@ def delete_expired_entries_continuously():
                 del r_records.cached_records[domain_name]
 delete_cache_entries = threading.Thread(target=delete_expired_entries_continuously)
 delete_cache_entries.start()
+
 # A class for resource records (RRs)
 
 
@@ -73,6 +73,7 @@ def get_name( response: bytes, position: int ):
     :param position: the start position of name bytes
     """
     qname = ''
+
     while True:
         length = response[position]
         if length == 0:
@@ -97,7 +98,7 @@ def get_name( response: bytes, position: int ):
 
     return qname, position
 
-def query_construct(domain: str, qtype='A', rd=True):
+def query_construct(domain: str, qtype='A', server='8.8.8.8'):
     """
     Creates query for a domain name
 
@@ -117,11 +118,9 @@ def query_construct(domain: str, qtype='A', rd=True):
     # q_header = struct.pack('!HHHHHH', id, id,id,id,id,id)
 
     # print('DNS query header:', q_header.hex())
-    if rd:
-        flags       = 0b0000000100000000  # standard query, with recursion
-    else:
-        flags       = 0b0000000000000000
-        # query with no recursion
+
+    flags       = 0b0000000100000000  # standard query, with recursion
+
     questions   = 1     # Number of queries
     answers     = 0     # Number of answers
     authority   = 0     # Authority bits clear as a query
@@ -168,24 +167,23 @@ def recursive_search( domain: str ):
     name = ""
 
     server = root.root_server_add[0]
-    prev_server = None
+
     for label in labels:
         name = label + ('.' if name else '') + name
-        # print("\n\n\n\n")
-        # print(f"Domain: {name}\nServer: {server}")
-        prev_server = server
+        print("\n\n\n\n")
+        print(f"Domain: {name}\nServer: {server}")
+
         # construct a DNS query with the label found so far and NS
         rrs = resolve( name, "NS",  server)
         if not rrs:
-            return name, prev_server, False
+            return None
         authority_rrs = rrs["Authority"]
         server = authority_rrs[0][-1]
 
-    # print(f"SERVER: {server}\tName: {name}")
+    print(f"SERVER: {server}\tName: {name}")
 
     # resolve( name, 'A', server)
-    
-    return name, server, True
+    return server
 
 
 def get_rrs( response, i, answers ):
@@ -198,6 +196,7 @@ def get_rrs( response, i, answers ):
     :param answers: count of the resource records in the response
     """
     answers_rr = []
+    
     for _ in range(answers):
         rrname, i = get_name( response, i )
        
@@ -239,8 +238,7 @@ def get_rrs( response, i, answers ):
                                                 "rrclass": rrclass, 
                                                 "ttl": ttl, 
                                                 "address": answer[0],
-                                                "timestamp": time.time() + ttl,
-                                                }
+                          "timestamp": time.time() + ttl,                      }
             
             # Start the alarm
             # print(f"Starting alarm for {rrname} for {ttl} seconds")
@@ -268,14 +266,16 @@ def search_cached_rrs( domain_name: str, qtype: str ):
         
         # Find in the list of the domain name found
         a_record = r_records.cached_records[domain_name]
-        if a_record["rrtype"] == qtype and qtype == RRTYPE["A"].value:
-            rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
-            rrs["Authority"] = []
+        if a_record["rrtype"] == qtype: 
+            if qtype == RRTYPE["A"].value:
+                rrs["Answer"] = [[domain_name, a_record["rrtype"], a_record["rrclass"], a_record["ttl"], a_record["address"]]]
+                rrs["Authority"] = []
+            
     
     return rrs
 
 
-def resolve(domain, qtype='A', server='1.1.1.1', rd = True):
+def resolve(domain, qtype='A', server='1.1.1.1'):
     """
     It gets the mapping from domain names to the IP address or CNAME
     resource.
@@ -285,7 +285,7 @@ def resolve(domain, qtype='A', server='1.1.1.1', rd = True):
     :param server: DNS server location.
     """
 
-    query = query_construct(domain, qtype, rd)
+    query = query_construct(domain, qtype, server)
 
     # send DNS query over UDP to specified server and receive response
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -312,10 +312,8 @@ def resolve(domain, qtype='A', server='1.1.1.1', rd = True):
     ra = (flags & 0b0000000010000000) >> 7
     z  = (flags & 0b0000000001000000) >> 6
     rcode = (flags & 0b0000000000111111)
-
     if rcode != 0:
-        print(f"Error: DNS server {server} returned error code {rcode}")
-        print("Trying other servers...")
+        print(f"Error: DNS server returned error code {rcode}")
         return []
     # 12 bytes headers are parsed, so skip them
     i = HEADER_LEN
@@ -332,11 +330,13 @@ def resolve(domain, qtype='A', server='1.1.1.1', rd = True):
     # Extract the answer section - A & CNAME type resource records
     answers_rr, i = get_rrs( response, i, answers )
 
-    # print(f"Answers: {answers_rr}" )
+    print(f"Answers: {answers_rr}" )
 
     authority_rr, i = get_rrs( response, i, authority )
     
-    # print( f"Authority Servers: {authority_rr}" )
+    print( f"Authority Servers: {authority_rr}" )
+
+
 
     rrs = {"Answer": answers_rr, "Authority": authority_rr}
     return rrs
@@ -348,69 +348,49 @@ def print_fn( rrs ):
 
     :param rrs: resource records found in the query
     """
-    if rrs["Answer"]:
+
     # Header of the output
-        print("\n\nHEADER: ANSWER SECTION")
+    print("\n\nHEADER: ANSWER SECTION")
 
-        # loop through the records and print them
-        answers = rrs["Answer"]
+    # loop through the records and print them
+    answers = rrs["Answer"]
 
-        for a_record in answers:
-            print(f"Name:\t{a_record[0]}")
-            print(f"Type:\t{type_lkup[a_record[1]]}")
-            print(f"Class:\t{a_record[2]}")
-            print(f"TTL:\t{a_record[3]}")
-            print(f"Server:\t{a_record[4]}\n")
-    if rrs["Authority"]:
-        print("\n\nHEADER: AUTHORITY SECTION")
-        ns = rrs["Authority"]
+    for a_record in answers:
+        print(f"Name:\t{a_record[0]}")
+        print(f"Type:\t{type_lkup[a_record[1]]}")
+        print(f"Class:\t{a_record[2]}")
+        print(f"TTL:\t{a_record[3]}")
+        print(f"Server:\t{a_record[4]}\n")
 
-        for a_record in ns:
-            print(f"Name:\t{a_record[0]}")
-            print(f"Type:\t{type_lkup[a_record[1]]}")
-            print(f"Class:\t{a_record[2]}")
-            print(f"TTL:\t{a_record[3]}")
-            print(f"Server:\t{a_record[4]}\n")
+    print("\n\nHEADER: AUTHORITY SECTION")
+    ns = rrs["Authority"]
 
-def run_dns_search( domain_name: str, rd=True, qtype = "A", dns_server = "127.0.0.1"):
+    for a_record in ns:
+        print(f"Name:\t{a_record[0]}")
+        print(f"Type:\t{type_lkup[a_record[1]]}")
+        print(f"Class:\t{a_record[2]}")
+        print(f"TTL:\t{a_record[3]}")
+        print(f"Server:\t{a_record[4]}\n")
+
+def run_dns_search( domain_name: str, qtype = "A"):
     """
     Driver function for the DNS search
     :param domain_name: the domain name to be searched
     """
 
     rrs = search_cached_rrs( domain_name, RRTYPE[qtype].value )
+
     if not len(rrs):
         # search the local server
-        rrs = resolve( domain_name, qtype, dns_server, rd )
+        rrs = resolve(domain_name, qtype)
         # if error response search recursively
         if not rrs:
-            label, authority_server, found = recursive_search( domain_name )
-            if not found:
-                # print( "No authority server found, please recheck the domain name" )
-                # remove the leftmost label
-                new_label = ""
-                if label.split("."):
-                    new_label = ".".join(label.split(".")[1:])
-                else:
-                    new_label = "."
-                record = [new_label, SOA, INTERNET, 404, authority_server]
-                rrs = {"Answer": [], "Authority": []}
-                rrs["Authority"].append(record)
-                return rrs
+            authority_server = recursive_search( domain_name )
+            if not authority_server:
+                return
+            rrs = resolve( domain_name, qtype, authority_server )
 
-            rrs = resolve( domain_name, qtype, authority_server, rd )
-    else:
-        print( "Found in cache" )
     return rrs
 
 if __name__ == '__main__':
     pass
-    # run_dns_search("khushim13.com.xyz.gad")
-    # run_dns_search("chat.google.com", False, "A")
-    # run_dns_search("chat.google.com", "CNAME")
-    # while True:
-    #     pass
-    # run_dns_search("chat.google.com")
-    # ip_addresses = resolve( "image.google.com" )
-    # print_fn(run_dns_search("image.google.com", True, "A"))
-    # print_fn(run_dns_search("www.sis.rit.edu"))

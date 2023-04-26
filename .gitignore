@@ -1,0 +1,4 @@
+
+*.pyc
+__pycache__/root_servers.cpython-310.pyc
+__pycache__/resource_records.cpython-310.pyc
